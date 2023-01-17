@@ -79,6 +79,29 @@ class Channel(XMLEntityDef):
 
 	items = XMLEntity('item', Item, rule=XMLEntityRule.MULTIPLE_OPTIONAL)
 
+Channel.Empty = Channel(**{
+	'description': '',
+	'link': '',
+	'title': '',
+	'category': [],
+	'cloud': None,
+	'copyright': None,
+	'docs': None,
+	'generator': None,
+	'image': None,
+	'language': None,
+	'last_build_date': None,
+	'managing_editor': None,
+	'pub_date': None,
+	'rating': None,
+	'skip_days': None,
+	'text_input': None,
+	'ttl': None,
+	'web_master': None,
+
+	'items': []
+})
+
 class RSSError(Exception):
 	def __init__(self, message):
 		super().__init__(message)
