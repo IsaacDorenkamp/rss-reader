@@ -53,10 +53,19 @@ class AggregateFeedModel(QtCore.QAbstractListModel):
 	def add(self, value: Channel):
 		for item in value.items:
 			index = bisect.bisect_left(keyed(self._items, key=lambda item_: self._sorter(item_[0])), self._sorter(item))
+			self.beginInsertRows(QModelIndex(), index, index)
 			self._items.insert(index, (item, value.ref))
+			self.endInsertRows()
 
 	def update(self, value: Channel):
-		self._items = list(filter(lambda item: item[1] != value.ref, self._items))
+		for i in range(len(self._items) - 1, -1, -1):
+			item = self._items[i]
+			should_remove = item[1] == value.ref
+			if should_remove:
+				self.beginRemoveRows(QModelIndex(), i, i)
+				self._items.pop(i)
+				self.endRemoveRows()
+
 		self.add(value)
 
 	def has_url(self, url: str) -> bool:

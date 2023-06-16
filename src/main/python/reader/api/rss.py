@@ -1,7 +1,10 @@
 from __future__ import annotations
-from .xml import *
+
 from datetime import datetime
+from lxml.etree import XMLParser
 import typing
+
+from .xml import *
 
 from util import dateutil
 
@@ -127,7 +130,10 @@ class RSSError(Exception):
 
 
 def parse_feed(source: str, strict: bool = False) -> Channel:
-    tree = ETree.fromstring(source)
+    parser = XMLParser(recover=True)
+    parser.feed(source)
+    tree = parser.close()
+
     assert tree.tag == "rss", RSSError("Expected rss for root element, got '%s' instead" % tree.tag)
     assert tree.get('version') == '2.0', RSSError("Expected 2.0 for RSS version, got '%s' instead"
                                                   % str(tree.get('version')))

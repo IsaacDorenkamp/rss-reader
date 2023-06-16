@@ -2,7 +2,8 @@ from concurrency import tasks
 
 from persist.caching import AbstractCache
 
-import fcntl
+from . import lockfile
+
 import json
 from typing import IO, TypeVar, Generic
 
@@ -17,7 +18,7 @@ class SaveTask(tasks.Task):
 
     def run(self):
         with open(self.path, 'w') as fp:
-            fcntl.lockf(fp, fcntl.LOCK_EX)
+            lockfile.lock(fp)
             self.save(fp)
 
         self.complete.emit()
