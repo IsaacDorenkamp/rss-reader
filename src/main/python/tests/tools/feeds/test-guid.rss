@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+
+<channel>
+    <title>Test with GUID</title>
+    <description>Test to determine if GUID Optimization Works</description>
+    <link>blah</link>
+    <item>
+        <title>Item with GUID 1</title>
+        <link>blah</link>
+        <description>Item 1</description>
+        <guid isPermaLink="false">guid-test-1</guid>
+    </item>
+    <item>
+        <title>Item without GUID 1</title>
+        <link>blah</link>
+        <description>Item 2</description>
+    </item>
+    <item>
+        <title>Item without GUID 2</title>
+        <link>blah</link>
+        <description>Item 3</description>
+    </item>
+    <item>
+        <title>Item GUID 2</title>
+        <link>blah</link>
+        <description>Item 4</description>
+        <guid isPermaLink="false">guid-test-2</guid>
+    </item>
+</channel>
+
+</rss>

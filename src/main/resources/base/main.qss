@@ -1,0 +1,18 @@
+QWidget#sidebar > * {
+    background-color: %(secondary-bg)s;
+    color: %(text)s;
+}
+
+QScrollArea, #items {
+    background-color: %(primary-bg)s;
+}
+
+QListView#feeds {
+    border: none;
+    color: %(text)s;
+}
+
+#items > ItemView, #items > ItemView > QLabel{
+    background-color: %(secondary-bg)s;
+    color: %(text)s;
+}

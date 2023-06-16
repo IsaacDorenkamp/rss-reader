@@ -1,122 +1,143 @@
-import xml.etree.ElementTree as ETree
-
+from __future__ import annotations
 from .xml import *
+from datetime import datetime
+import typing
+
+from util import dateutil
+
 
 class Category(XMLEntityDef):
-	domain = XMLAttribute('domain')
-	value = XMLTextContent(XMLTextContent.primitive)
+    domain: typing.Optional[str] = XMLAttribute('domain')
+    value: str = XMLTextContent(XMLTextContent.primitive)
+
 
 class Cloud(XMLEntityDef):
-	domain = XMLAttribute('domain')
-	path = XMLAttribute('path')
-	port = XMLAttribute('port')
-	protocol = XMLAttribute('protocol')
-	register_procedure = XMLAttribute('registerProcedure')
+    domain: typing.Optional[str] = XMLAttribute('domain')
+    path: typing.Optional[str] = XMLAttribute('path')
+    port: typing.Optional[str] = XMLAttribute('port')
+    protocol: typing.Optional[str] = XMLAttribute('protocol')
+    register_procedure: typing.Optional[str] = XMLAttribute('registerProcedure')
+
 
 class Image(XMLEntityDef):
-	link = XMLPrimitive('link', str, rule=XMLEntityRule.SINGLE)
-	title = XMLPrimitive('title', str, rule=XMLEntityRule.SINGLE)
-	url = XMLPrimitive('url', str, rule=XMLEntityRule.SINGLE)
-	description = XMLPrimitive('description', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	height = XMLPrimitive('height', int, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	width = XMLPrimitive('width', int, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    link: str = XMLPrimitive('link', str, rule=XMLEntityRule.SINGLE)
+    title: str = XMLPrimitive('title', str, rule=XMLEntityRule.SINGLE)
+    url: str = XMLPrimitive('url', str, rule=XMLEntityRule.SINGLE)
+    description: typing.Optional[str] = XMLPrimitive('description', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    height: typing.Optional[int] = XMLPrimitive('height', int, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    width: typing.Optional[int] = XMLPrimitive('width', int, rule=XMLEntityRule.SINGLE_OPTIONAL)
+
 
 class Item(XMLEntityDef):
-	class Enclosure(XMLEntityDef):
-		length = XMLAttribute('length', optional=False, processor=lambda x: int(x))
-		type = XMLAttribute('type', optional=False)
-		url = XMLAttribute('url', optional=False)
+    class Enclosure(XMLEntityDef):
+        length: int = XMLAttribute('length', optional=False, processor=lambda x: int(x))
+        type: str = XMLAttribute('type', optional=False)
+        url: str = XMLAttribute('url', optional=False)
 
-	class GUID(XMLEntityDef):
-		is_permalink = XMLAttribute('isPermaLink')
-		value = XMLTextContent(XMLTextContent.primitive)
+    class GUID(XMLEntityDef):
+        is_permalink: typing.Optional[str] = XMLAttribute('isPermaLink')
+        value: str = XMLTextContent(XMLTextContent.primitive)
 
-	class Source(XMLEntityDef):
-		url = XMLAttribute('url', optional=False)
-		value = XMLTextContent(XMLTextContent.primitive)
+    class Source(XMLEntityDef):
+        url: str = XMLAttribute('url', optional=False)
+        value: str = XMLTextContent(XMLTextContent.primitive)
 
-	author = XMLPrimitive('author', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	category = XMLEntity('category', Category, rule=XMLEntityRule.MULTIPLE_OPTIONAL)
-	comments = XMLPrimitive('comments', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	description = XMLPrimitive('description', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	enclosure = XMLEntity('enclosure', Enclosure, rule=XMLEntityRule.MULTIPLE_OPTIONAL)
-	link = XMLPrimitive('link', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	pub_date = XMLPrimitive('pubDate', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	source = XMLEntity('source', Source, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	title = XMLPrimitive('title', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    author: str = XMLPrimitive('author', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    category: Category = XMLEntity('category', Category, rule=XMLEntityRule.MULTIPLE_OPTIONAL)
+    comments: str = XMLPrimitive('comments', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    description: str = XMLPrimitive('description', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    enclosure: Enclosure = XMLEntity('enclosure', Enclosure, rule=XMLEntityRule.MULTIPLE_OPTIONAL)
+    guid: GUID = XMLEntity('guid', GUID, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    link: str = XMLPrimitive('link', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    pub_date: datetime = XMLPrimitive('pubDate', dateutil.parse, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    source: Source = XMLEntity('source', Source, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    title: str = XMLPrimitive('title', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+
 
 class Channel(XMLEntityDef):
-	class SkipDays(XMLEntityDef):
-		days = XMLPrimitive('day', str, rule=XMLEntityRule.MULTIPLE)
+    Empty: Channel
+    Invalid: Channel
 
-	class SkipHours(XMLEntityDef):
-		hours = XMLPrimitive('hour', int, rule=XMLEntityRule.MULTIPLE)
+    class SkipDays(XMLEntityDef):
+        days: typing.List[str] = XMLPrimitive('day', str, rule=XMLEntityRule.MULTIPLE)
 
-	class TextInput(XMLEntityDef):
-		description = XMLPrimitive('description', str, rule=XMLEntityRule.SINGLE)
-		link = XMLPrimitive('link', str, rule=XMLEntityRule.SINGLE)
-		name = XMLPrimitive('name', str, rule=XMLEntityRule.SINGLE)
-		title = XMLPrimitive('title', str, rule=XMLEntityRule.SINGLE)
+    class SkipHours(XMLEntityDef):
+        hours: typing.List[int] = XMLPrimitive('hour', int, rule=XMLEntityRule.MULTIPLE)
 
-	description = XMLPrimitive('description', str, rule=XMLEntityRule.SINGLE)
-	link = XMLPrimitive('link', str, rule=XMLEntityRule.SINGLE)
-	title = XMLPrimitive('title', str, rule=XMLEntityRule.SINGLE)
-	category = XMLEntity('category', Category, rule=XMLEntityRule.MULTIPLE_OPTIONAL)
-	cloud = XMLEntity('cloud', Cloud, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	copyright = XMLPrimitive('copyright', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	docs = XMLPrimitive('docs', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	generator = XMLPrimitive('generator', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	image = XMLEntity('image', Image, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	language = XMLPrimitive('language', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	last_build_date = XMLPrimitive('lastBuildDate', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	managing_editor = XMLPrimitive('managingEditor', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	pub_date = XMLPrimitive('pubDate', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	rating = XMLPrimitive('rating', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	skip_days = XMLEntity('skipDays', SkipDays, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	text_input = XMLEntity('textInput', TextInput, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	ttl = XMLPrimitive('ttl', int, rule=XMLEntityRule.SINGLE_OPTIONAL)
-	web_master = XMLPrimitive('webMaster', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    class TextInput(XMLEntityDef):
+        description: str = XMLPrimitive('description', str, rule=XMLEntityRule.SINGLE)
+        link: str = XMLPrimitive('link', str, rule=XMLEntityRule.SINGLE)
+        name: str = XMLPrimitive('name', str, rule=XMLEntityRule.SINGLE)
+        title: str = XMLPrimitive('title', str, rule=XMLEntityRule.SINGLE)
 
-	items = XMLEntity('item', Item, rule=XMLEntityRule.MULTIPLE_OPTIONAL)
+    description: str = XMLPrimitive('description', str, rule=XMLEntityRule.SINGLE)
+    link: str = XMLPrimitive('link', str, rule=XMLEntityRule.SINGLE)
+    title: str = XMLPrimitive('title', str, rule=XMLEntityRule.SINGLE)
+    category: typing.List[Category] = XMLEntity('category', Category, rule=XMLEntityRule.MULTIPLE_OPTIONAL)
+    cloud: typing.Optional[Cloud] = XMLEntity('cloud', Cloud, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    copyright: typing.Optional[str] = XMLPrimitive('copyright', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    docs: typing.Optional[str] = XMLPrimitive('docs', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    generator: typing.Optional[str] = XMLPrimitive('generator', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    image: typing.Optional[Image] = XMLEntity('image', Image, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    language: typing.Optional[str] = XMLPrimitive('language', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    last_build_date: typing.Optional[str] = XMLPrimitive('lastBuildDate', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    managing_editor: typing.Optional[str] = XMLPrimitive('managingEditor', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    pub_date: datetime = XMLPrimitive('pubDate', dateutil.parse, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    rating: str = XMLPrimitive('rating', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    skip_days: typing.Optional[typing.List[str]] = XMLEntity('skipDays', SkipDays, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    skip_hours: typing.Optional[typing.List[int]] = XMLEntity('skipHours', SkipHours, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    text_input: typing.Optional[TextInput] = XMLEntity('textInput', TextInput, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    ttl: typing.Optional[int] = XMLPrimitive('ttl', int, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    web_master: typing.Optional[str] = XMLPrimitive('webMaster', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
+
+    items = XMLEntity('item', Item, rule=XMLEntityRule.MULTIPLE_OPTIONAL)
+
+    ref: typing.Optional[str] = None
+    """URL referring to this feed"""
+
 
 Channel.Empty = Channel(**{
-	'description': '',
-	'link': '',
-	'title': '',
-	'category': [],
-	'cloud': None,
-	'copyright': None,
-	'docs': None,
-	'generator': None,
-	'image': None,
-	'language': None,
-	'last_build_date': None,
-	'managing_editor': None,
-	'pub_date': None,
-	'rating': None,
-	'skip_days': None,
-	'text_input': None,
-	'ttl': None,
-	'web_master': None,
+    'description': '',
+    'link': '',
+    'title': '',
+    'category': [],
+    'cloud': None,
+    'copyright': None,
+    'docs': None,
+    'generator': None,
+    'image': None,
+    'language': None,
+    'last_build_date': None,
+    'managing_editor': None,
+    'pub_date': None,
+    'rating': None,
+    'skip_days': None,
+    'text_input': None,
+    'ttl': None,
+    'web_master': None,
 
-	'items': []
+    'items': []
 })
 
+Channel.Invalid = Channel()
+
+
 class RSSError(Exception):
-	def __init__(self, message):
-		super().__init__(message)
+    pass
 
-def parse_feed(source, strict=False):
-	tree = ETree.fromstring(source)
-	assert tree.tag == "rss", RSSError("Expected rss for root element, got '%s' instead" % tree.tag)
-	assert tree.get('version') == '2.0', RSSError("Expected 2.0 for RSS version, got '%s' instead" % str(tree.get('version')))
 
-	channel = tree.find('channel')
-	assert channel is not None, RSSError("RSS element has no channel!")
+def parse_feed(source: str, strict: bool = False) -> Channel:
+    tree = ETree.fromstring(source)
+    assert tree.tag == "rss", RSSError("Expected rss for root element, got '%s' instead" % tree.tag)
+    assert tree.get('version') == '2.0', RSSError("Expected 2.0 for RSS version, got '%s' instead"
+                                                  % str(tree.get('version')))
 
-	channel = Channel.from_xml(channel, strict)
-	for item in channel.items:
-		if item.description is None and item.title is None:
-			raise RSSError("Item contains neither title nor description")
+    channel = tree.find('channel')
+    assert channel is not None, RSSError("RSS element has no channel!")
 
-	return channel
+    channel = Channel.from_xml(channel, strict)
+    for item in channel.items:
+        if item.description is None and item.title is None:
+            raise RSSError("Item contains neither title nor description")
+
+    return channel
