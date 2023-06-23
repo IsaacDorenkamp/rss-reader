@@ -1,13 +1,14 @@
 import typing
 
 from PyQt5 import QtCore
-from PyQt5.QtCore import Qt, QModelIndex
+from PyQt5.QtCore import Qt, QModelIndex, QSize
 
 import bisect
 
 from typing import Optional, Union, List, Iterable, Callable, Tuple, Generator, TypeVar
 from reader.api.rss import Channel, Item
 from util.comparable import Comparable, keyed
+from reader.api.xml import bool_, XMLEntityRule, XMLPrimitive
 
 
 class AggregateFeedModel(QtCore.QAbstractListModel):
@@ -16,67 +17,78 @@ class AggregateFeedModel(QtCore.QAbstractListModel):
 	the adding of new channels that contain items that must be inserted earlier in the sequence.
 	"""
 
-	DEFAULT_BATCH_SIZE = 100
+	DEFAULT_BATCH_SIZE = 10
 
 	fetch_batch_size: int
 	"""
 	The number of items that should be fetched with each call to fetchMore(qIndex).
 	"""
 
-	_items: List[Tuple[Item, str]]
+	_items: List[Item]
+	_loaded: int
 	_sorter: Callable[[Item], Comparable]
 
-	def __init__(self, sort_by: Callable[[Item], Comparable], feeds: Optional[Iterable[Channel]] = None):
+	def __init__(self, sort_by: Callable[[Item], Comparable], feeds: Optional[Iterable[Channel]] = None, fetch_batch_size = DEFAULT_BATCH_SIZE):
 		super().__init__()
 		self._sorter = sort_by
+		self.fetch_batch_size = fetch_batch_size
+		self._loaded = 0
 		if feeds:
 			self._items = sorted(
 				sum([
-					[(item, channel.ref) for item in channel.items] for channel in feeds
-				], []), key=lambda item: self._sorter(item[0])
+					list(channel.items) for channel in feeds
+				], []), key=lambda item: self._sorter(item)
 			)
 		else:
 			self._items = []
 
-	def _add_one(self, item: Item, url: str):
-		# TODO: Is there a way to optimize non-continguous row insertions?
-		end_idx = len(self._items)
-		self.beginInsertRows(QModelIndex(), end_idx, end_idx)
-		self._items.append((item, url))
-
-	def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Union[str, Item]:
+	def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Union[Item, QtCore.QSize, None]:
 		if role == Qt.DisplayRole:
-			row = index.row()
-			item = self._items[row][0]
-			return item.title
+			return self._items[index.row()]
 
 	def add(self, value: Channel):
 		for item in value.items:
-			index = bisect.bisect_left(keyed(self._items, key=lambda item_: self._sorter(item_[0])), self._sorter(item))
-			self.beginInsertRows(QModelIndex(), index, index)
-			self._items.insert(index, (item, value.ref))
-			self.endInsertRows()
+			if item in self._items:
+				continue
 
-	def update(self, value: Channel):
-		for i in range(len(self._items) - 1, -1, -1):
-			item = self._items[i]
-			should_remove = item[1] == value.ref
-			if should_remove:
-				self.beginRemoveRows(QModelIndex(), i, i)
-				self._items.pop(i)
-				self.endRemoveRows()
+			index = bisect.bisect_left(keyed(self._items, key=lambda item_: self._sorter(item_)), self._sorter(item))
 
-		self.add(value)
+			should_insert = index < self._loaded
+			if should_insert:
+				self._loaded += 1
+				self.beginInsertRows(QModelIndex(), index, index)
+
+			self._items.insert(index, item)
+
+			if should_insert:
+				self.endInsertRows()
 
 	def has_url(self, url: str) -> bool:
-		return any(map(lambda item: item[1] == url, self._items))
+		return any(map(lambda item: item._parent.link == url or item._parent.ref == url, self._items))
 
 	def rowCount(self, parent: QModelIndex = QModelIndex()):
-		total = len(self._items)
+		total = self._loaded
 		if parent.isValid():
 			total - (parent.row() + 1)
 		else:
 			return total
+	
+	def canFetchMore(self, parent: QModelIndex = QModelIndex()) -> bool:
+		if parent.isValid():
+			return False
+	
+		return self._loaded < len(self._items)
+	
+	def fetchMore(self, parent: QModelIndex = QModelIndex()):
+		if parent.isValid():
+			return
+		
+		unloaded = len(self._items) - self._loaded
+		to_fetch = min(unloaded, self.fetch_batch_size)
+
+		self.beginInsertRows(parent, self._loaded, self._loaded + to_fetch - 1)
+		self._loaded += to_fetch
+		self.endInsertRows()
 
 	@property
 	def items(self) -> Generator[Item, None, None]:

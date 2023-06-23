@@ -1,4 +1,4 @@
-from PyQt5.QtGui import QFont, QFontDatabase
+from PyQt5.QtGui import QFont
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
 
 import json
@@ -7,6 +7,10 @@ import sys
 global BASE_FONT
 global MID_FONT
 global TITLE_FONT
+
+BASE_FONT = QFont()
+MID_FONT = QFont()
+TITLE_FONT = QFont()
 
 
 def fatal(exc, status=1):
@@ -19,13 +23,12 @@ def _create_fonts():
 	global MID_FONT
 	global TITLE_FONT
 
-	BASE_FONT = QFont()
 	BASE_FONT.setFamily(BASE_FONT.defaultFamily())
 
-	MID_FONT = QFont(BASE_FONT.family())
+	MID_FONT.setFamily(BASE_FONT.family())
 	MID_FONT.setPointSize(14)
 
-	TITLE_FONT = QFont(BASE_FONT.family())
+	TITLE_FONT.setFamily(BASE_FONT.family())
 	TITLE_FONT.setPointSize(18)
 
 

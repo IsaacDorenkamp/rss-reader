@@ -4,19 +4,20 @@ import functools
 import logging
 import os
 import pytz
+import time
 import uuid
 from typing import Dict, Union, Iterable, List
 
 import config
 from . import dialogs
 from concurrency import tasks, fetcher
+from ui.delegates import FeedItemDelegate
 from ui.models import AggregateFeedModel
 from persist import app_data, caching, concurrency
 from reader.api.rss import Channel
 from reader.api.xml import XMLEntityConstraintError
 import main
 import models
-import time
 
 
 class MainApplication(QMainWindow):
@@ -44,6 +45,7 @@ class MainApplication(QMainWindow):
 		self.setWindowTitle(f"RSS Reader v{version}")
 
 		self._setup_menubar()
+		self._setup_toolbar()
 
 		self.layout().setContentsMargins(0, 0, 0, 0)
 
@@ -59,6 +61,7 @@ class MainApplication(QMainWindow):
 			)
 		)
 		sidebar = QListView(self.content_pane)
+		sidebar.setItemDelegate(FeedItemDelegate(sidebar))
 		sidebar.setModel(self.feed_aggregate)
 
 		top_layout.addWidget(sidebar)
@@ -112,12 +115,29 @@ class MainApplication(QMainWindow):
 
 		feeds = menu_bar.addMenu("&Feeds")
 		feeds.addAction(new_feed)
+	
+	def _setup_toolbar(self):
+		toolbar = self.addToolBar("Feeds")
+
+		self.refresh_action = QAction("&Refresh", self)
+		self.refresh_action.triggered.connect(self.refresh)
+		toolbar.addAction(self.refresh_action)
 
 	def on_new_feed(self):
 		dialog = dialogs.NewFeed()
 		dialog.new_feed.connect(self.new_feed)
 		dialog.show()
 		dialog.exec_()
+
+	def refresh(self):
+		# TODO - what if fetch fails?
+		self.refresh_action.setEnabled(False)
+		self.fetcher.fetch_all(
+			[feed_definition.url for feed_definition in self.loaded_feeds.values()],
+			functools.partial(
+				self.on_fetch_batch
+			)
+		)
 
 	def new_feed(self, url):
 		if self.feed_aggregate.has_url(url):
@@ -154,7 +174,7 @@ class MainApplication(QMainWindow):
 		if cached:
 			for channel in cached.values():
 				logging.info("using cached feed - {}".format(channel.ref))
-				self.feed_aggregate.update(channel)
+				self.feed_aggregate.add(channel)
 
 		save_tasks = []
 		for url, result in results.items():
@@ -176,13 +196,15 @@ class MainApplication(QMainWindow):
 
 				save_tasks.append(concurrency.CacheTask(self.channels, feed_def.cache_key, result))
 
-				if self.feed_aggregate.has_url(result.ref):
-					self.feed_aggregate.update(result)
-				else:
-					self.feed_aggregate.add(result)
+				self.feed_aggregate.add(result)
 
-		save_tasks.append(concurrency.JSONSaveTask(
-			models.FeedDefinition.to_multiple(self.loaded_feeds.values()), os.path.join(config.USER_DATA, 'feeds.json'))
+		# TODO - trigger refresh re-enabled AFTER save task(s)
+		self.refresh_action.setEnabled(True)
+
+		save_tasks.append(
+			concurrency.JSONSaveTask(
+				models.FeedDefinition.to_multiple(self.loaded_feeds.values()), os.path.join(config.USER_DATA, 'feeds.json')
+			)
 		)
 
 		self.tasks.start_all(save_tasks)

@@ -130,10 +130,12 @@ class FileCache(AbstractCache[T], Generic[T, V]):
         return pathlib.Path(os.path.join(self.location, self.with_extension(key)))
 
 
-class JSONDateEncoder(JSONEncoder):
+class JSONModelEncoder(JSONEncoder):
     def default(self, obj):
         if isinstance(obj, datetime.date):
             return obj.isoformat()
+        elif isinstance(obj, bool):
+            return 1 if bool else 0
         else:
             return super().default(obj)
 
@@ -143,7 +145,7 @@ class ChannelFileCache(FileCache[rss.Channel, str]):
         super().__init__(location, 'json', encoding='utf-8')
 
     def write(self, value: Tuple[rss.Channel, Optional[int]], destination: IO[str]):
-        json.dump([value[0].to_dict(), value[1]], destination, cls=JSONDateEncoder)
+        json.dump([value[0].to_dict(), value[1]], destination, cls=JSONModelEncoder)
 
     def read(self, source: IO[str]) -> Tuple[rss.Channel, Optional[int]]:
         try:

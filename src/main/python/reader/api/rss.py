@@ -56,6 +56,46 @@ class Item(XMLEntityDef):
     source: Source = XMLEntity('source', Source, rule=XMLEntityRule.SINGLE_OPTIONAL)
     title: str = XMLPrimitive('title', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
 
+    # These are our custom attributes which we use to track item state.
+    read: bool = XMLPrimitive('read', bool_, rule=XMLEntityRule.SINGLE_OPTIONAL)
+
+    def __eq__(self, other: Item) -> bool:
+        if self._parent and other._parent:
+            channel = self._parent
+            other_channel = other._parent
+            if channel.link != other_channel.link:
+                return False
+        else:
+            if self._parent or other._parent:
+                return False
+
+        if self.guid and other.guid:
+            return self.guid.value == other.guid.value
+        elif self.guid or other.guid:
+            return False
+        
+        if self.link and other.link:
+            return self.link == other.link
+        elif self.link or other.link:
+            return False
+
+        if self.title and other.title:
+            if self.description and other.description:
+                return (self.description == other.description)\
+                    and (self.title == other.title)
+            elif self.description or other.description:
+                return False
+        elif self.title or other.title:
+            return False
+        
+        return False
+
+    def belongsTo(self, channel: Channel) -> bool:
+        if self._parent:
+            return self._parent == channel
+        else:
+            return False
+
 
 class Channel(XMLEntityDef):
     Empty: Channel
@@ -97,6 +137,19 @@ class Channel(XMLEntityDef):
 
     ref: typing.Optional[str] = None
     """URL referring to this feed"""
+
+    def __eq__(self, other: Channel) -> bool:
+        if self.link and other.link:
+            return self.link == other.link
+        elif self.link or other.link:
+            return False
+        
+        if self.ref and other.ref:
+            return self.ref == other.ref
+        elif self.ref or other.ref:
+            return False
+        
+        return False
 
 
 Channel.Empty = Channel(**{

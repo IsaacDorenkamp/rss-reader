@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+from functools import reduce
 import collections.abc
 from typing import Dict, Any, TypeVar, Type
 import xml.etree.ElementTree as ETree
@@ -41,6 +42,11 @@ def get_as_iterable(source, key, valid_types):
 		return value
 	else:
 		raise TypeError("Expected list with item type %s, found item with type %s" % (type_string(valid_types), bad_type))
+
+
+def bool_(value: str) -> bool:
+	"""Convert a numeric string to a boolean value"""
+	return bool(int(value))
 
 
 class XMLEntityError(Exception):
@@ -104,6 +110,12 @@ class XMLEntityRule(enum.Enum):
 
 	def is_single(self):
 		return self in [self.SINGLE, self.SINGLE_OPTIONAL]
+	
+	def is_required(self):
+		return self in [self.SINGLE, self.MULTIPLE]
+
+	def is_optional(self):
+		return self in [self.SINGLE_OPTIONAL, self.MULTIPLE_OPTIONAL]
 
 
 class XMLPrimitive:
@@ -178,9 +190,9 @@ class XMLEntityMeta(type):
 			del dct['abstract']
 			return entity_type
 
-		attributes = {}
-		tag_types = {}
-		text_handler = None
+		attributes = reduce(lambda a, b: a.update(b), [getattr(base, "__xmlattributes__", {}) for base in bases])
+		tag_types = reduce(lambda a, b: a.update(b), [getattr(base, "__xmltypes__", {}) for base in bases])
+		text_handler = getattr(bases[-1], "__xmltext__", None) if len(bases) else None
 		for key, value in dct.items():
 			is_xml_type = getattr(value, '__xmltype__', False)
 			if is_xml_type:
@@ -203,6 +215,8 @@ class XMLEntityMeta(type):
 
 class XMLEntityDef(metaclass=XMLEntityMeta):
 	abstract = True
+
+	_parent: XMLEntity | None = None
 
 	INCLUDE: Dict[str, str] = {}
 
@@ -247,15 +261,19 @@ class XMLEntityDef(metaclass=XMLEntityMeta):
 			field, handler = cls.__xmltext__
 			data[field] = handler.from_text(text)
 
-		# Finally, run validation on data.
-		for tag, pair in cls.__xmltypes__.items():
+		# Finally, run validation on data and set parent fields.
+		result = cls(**data)
+		for pair in cls.__xmltypes__.values():
 			field, processor = pair
 			try:
 				processor.rule.validate(data[field])
 			except XMLEntityConstraintError as xmlerr:
 				raise XMLEntityConstraintError(str(xmlerr) % field)
-
-		return cls(**data)
+			
+			if isinstance(data[field], XMLEntity):
+				data[field]._parent = result
+		
+		return result
 
 	def to_dict(self) -> Dict[str, Any]:
 		output = {}
@@ -307,7 +325,10 @@ class XMLEntityDef(metaclass=XMLEntityMeta):
 					except ValueError:
 						values[key] = None
 			except KeyError:
-				raise ValueError("source missing expected key '%s'" % key)
+				if processor.rule.is_required():
+					raise ValueError("source missing expected key '%s'" % key)
+				else:
+					values[key] = None
 
 		for key in cls.__xmlattributes__.keys():
 			try:
