@@ -32,11 +32,10 @@ class MainApplication(QMainWindow):
 
 		self.__ctx = ctx
 		self.loaded_feeds = ctx.loaded_feeds.copy()
-		self.tasks = tasks.TaskManager()
+		self.tasks = tasks.BackgroundTasks()
 		self.fetcher = fetcher.Fetcher(task_manager=self.tasks)
 		self.channels = caching.ChannelMultiCache()
 
-		self.__resize_timer = None
 		self._setup_ui()
 		self._setup()
 
@@ -144,10 +143,12 @@ class MainApplication(QMainWindow):
 			# Ignore existing urls
 			return
 
-		task = tasks.FetchFeed(url)
-		task.success.connect(self.on_fetch_new)
-		task.failure.connect(self.on_fetch_fail)
-		self.tasks.start_task(task)
+		# TODO - finish implementing this
+		task = tasks.FetchTask(url)
+		
+		# task.success.connect(self.on_fetch_new)
+		# task.failure.connect(self.on_fetch_fail)
+		# self.tasks.start_task(task)
 
 	def on_fetch_new(self, channel: Channel):
 		feed_definition = self.loaded_feeds.get(channel.ref)

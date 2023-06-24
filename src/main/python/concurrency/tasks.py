@@ -1,102 +1,92 @@
-from typing import Iterable
+from __future__ import annotations
 
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 import requests
 import functools
-from typing import Optional, Callable, Any
-import uuid
+from typing import Generic, Tuple, TypeVar, Union
 
 from reader.api import rss, xml
 
 
-class Task(QObject):
-	complete = pyqtSignal()
+T = TypeVar('T')
 
-	thread: Optional[QThread]
-	cbk: Optional[Callable[[], Any]]
+
+class Task(QObject, Generic[T]):
+	finished = pyqtSignal()
+
+	result: Tuple[bool, Union[T, BaseException]] = None  # tuple is structured to be (is_error, result_or_exception)
 
 	def __init__(self):
 		super().__init__()
-		self._id = uuid.uuid4()
-		self.thread = None
-		self.cbk = None
 
-	def create_thread(self, cbk: Optional[Callable[[], Any]]) -> QThread:
-		self.thread = thread = QThread()
-
-		self.moveToThread(thread)
-
-		thread.started.connect(self.run)
-		self.complete.connect(self._end)
-
-		thread.finished.connect(thread.deleteLater)
-		return thread
-
-	def _end(self):
-		self.thread.quit()
-		self.deleteLater()
-
-		if self.cbk:
-			self.cbk()
-
-	@property
-	def id(self):
-		return self._id
-
-	# Note: I would use abc's abstractmethod here but
-	# there is a metaclass conflict between QObject
-	# and abc.ABC, so only one can be applied. And
-	# to leverage PyQT's threading system, we have no
-	# choice but to choose to subclass QObject.
-	def run(self):
+	def run(self) -> T:
 		raise NotImplementedError()
+	
+	def handle_error(self, error: BaseException):
+		raise NotImplementedError()
+	
+	def handle_result(self, result: T):
+		raise NotImplementedError()
+	
+	def execute(self):
+		try:
+			self.result = (False, self.run())
+		except BaseException as exc:
+			self.result = (True, exc)
+		finally:
+			self.finished.emit()
 
 
-class TaskManager:
+class BackgroundTasks:
 	def __init__(self):
-		self.running = []
+		self._tasks = []
 
-	def start_task(self, task: Task):
-		thread = task.create_thread(self._end_task)
-		refs = (task, thread)
-		thread.cbk = functools.partial(self._end_task, refs)
-		self.running.append(refs)
+	def execute(self, worker: Task):
+		thread = QThread()
+		worker.moveToThread(thread)
+		worker.finished.connect(thread.quit)
+		worker.finished.connect(functools.partial(self._complete, thread, worker))
+		thread.finished.connect(thread.deleteLater)
 		thread.start()
+		self._tasks.append((thread, worker))
+	
+	def _complete(self, thread: QThread, worker: Task):
+		is_error, result_or_error = worker.result
+		if is_error:
+			worker.error_handler(result_or_error)
+		else:
+			worker.callback(result_or_error)
 
-	def start_all(self, tasks: Iterable[Task]):
-		for task in tasks:
-			self.start_task(task)
-
-	def _end_task(self, refs):
-		self.running.remove(refs)
+		worker.deleteLater()
+		self._tasks.remove((thread, worker))
 
 
-class FetchFeed(Task):
-	success = pyqtSignal(rss.Channel)
-	failure = pyqtSignal(Exception)
-	complete = pyqtSignal()
+class FetchTask(Task[rss.Channel]):
+	url: str
 
 	def __init__(self, url):
 		super().__init__()
 		self.url = url
 
-		self.success.connect(self.complete.emit)
-		self.failure.connect(self.complete.emit)
-
-	def run(self):
-		try:
-			response = requests.get(self.url, headers={
-				"Accept": "application/rss+xml"
-			})
-			response.raise_for_status()
-		except requests.exceptions.RequestException as exc:
-			self.failure.emit(exc)
-			return
+	def run(self) -> rss.Channel:
+		response = requests.get(self.url, headers={
+			"Accept": "application/rss+xml"
+		})
+		response.raise_for_status()
 
 		content = response.text
-		try:
-			channel = rss.parse_feed(content)
-			channel.ref = self.url
-			self.success.emit(channel)
-		except (rss.RSSError, xml.XMLEntityError) as exc:
-			self.failure.emit(exc)
+		channel = rss.parse_feed(content)
+		channel.ref = self.url
+		return channel
+
+	# TODO - implement these lol
+	def handle_error(self, error: BaseException):
+		if isinstance(error, requests.RequestException):
+			pass
+		elif isinstance(error, (rss.RSSError, xml.XMLEntityError)):
+			pass
+		else:
+			pass
+
+	def handle_result(self, result: rss.Channel):
+		pass

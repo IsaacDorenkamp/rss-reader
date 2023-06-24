@@ -1,14 +1,11 @@
-import typing
-
 from PyQt5 import QtCore
-from PyQt5.QtCore import Qt, QModelIndex, QSize
+from PyQt5.QtCore import Qt, QModelIndex
 
 import bisect
 
-from typing import Optional, Union, List, Iterable, Callable, Tuple, Generator, TypeVar
+from typing import Optional, Union, List, Iterable, Callable, Generator
 from reader.api.rss import Channel, Item
 from util.comparable import Comparable, keyed
-from reader.api.xml import bool_, XMLEntityRule, XMLPrimitive
 
 
 class AggregateFeedModel(QtCore.QAbstractListModel):
@@ -92,5 +89,4 @@ class AggregateFeedModel(QtCore.QAbstractListModel):
 
 	@property
 	def items(self) -> Generator[Item, None, None]:
-		for item, _ in self._items:
-			yield item
+		yield from self._items
