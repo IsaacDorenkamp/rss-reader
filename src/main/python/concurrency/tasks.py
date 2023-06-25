@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from PyQt5.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
-import requests
+
 import functools
-from typing import Any, Generic, List, Optional, Tuple, TypeVar
+import logging
+import requests
+from typing import Generic, List, Optional, TypeVar
 
 from reader.api import rss, xml
 
@@ -39,8 +41,11 @@ class Task(QRunnable, Generic[T]):
 	
 	def run(self):
 		try:
+			logging.info(f"[START] {str(self)}")
 			result = TaskResult(self.execute())
+			logging.info(f"[FINISH] {str(self)}")
 		except BaseException as exc:
+			logging.info(f"[FAIL] {str(self)}")
 			result = TaskResult(None, exc)
 		
 		self.signals.finished.emit(result)
@@ -63,6 +68,9 @@ class FetchTask(Task[rss.Channel]):
 		channel = rss.parse_feed(content)
 		channel.ref = self.url
 		return channel
+	
+	def __str__(self):
+		return f"fetch {self.url}"
 
 
 class Batch(QObject, Generic[T]):
@@ -77,6 +85,10 @@ class Batch(QObject, Generic[T]):
 		self.results = [None for _ in tasks]
 	
 	def start(self, pool: QThreadPool):
+		if not self._tasks:
+			self.complete.emit([])
+			return
+
 		for idx, task in enumerate(self._tasks):
 			task.signals.finished.connect(functools.partial(self._complete, idx))
 			pool.start(task)

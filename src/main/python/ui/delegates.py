@@ -38,20 +38,20 @@ class FeedItemDelegate(QtWidgets.QStyledItemDelegate):
         
         title_metrics = self._unread_title_metrics if not item.read else self._title_metrics
         title_height = title_metrics.height()
+        modified_title = title_metrics.elidedText(item.title, Qt.ElideRight, bounds.width())
         desc_box = self._body_metrics.boundingRect(bounds, Qt.TextWordWrap, description)
         desc_box.setHeight(min((self._body_metrics.height() * 3), desc_box.height()))
         bounds.setHeight(title_height + 10 + desc_box.height())
-        return [bounds, title_height + 10]
+        return [bounds, title_height + 10, modified_title]
 
     def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex):
         if option.state & QStyle.State_Selected:
             painter.fillRect(option.rect, option.palette.highlight())
 
         item: Item = index.data(role=Qt.DisplayRole)
-        title: str = item.title
         description: str = item.plain_description
 
-        item_box, desc_offset = self._render(item, option)
+        item_box, desc_offset, title = self._render(item, option)
 
         painter.setBrush(option.palette.text())
         painter.setFont(MID_FONT_BOLD if not item.read else MID_FONT)

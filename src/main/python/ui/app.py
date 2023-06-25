@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QMainWindow, QAction, QListView, QHBoxLayout, QWidget, QMessageBox
-from PyQt5.QtCore import QThreadPool
+from PyQt5.QtCore import QThreadPool, QItemSelection, Qt
 
 import datetime
 import functools
@@ -16,7 +16,7 @@ import config
 from concurrency import tasks
 import main
 import models
-from persist import app_data, caching, concurrency
+from persist import app_data, caching, tasks as iotasks
 from reader.api import rss, xml
 from reader.api.rss import Channel
 from reader.api.xml import XMLEntityConstraintError
@@ -24,6 +24,7 @@ from ui.delegates import FeedItemDelegate
 from ui.models import AggregateFeedModel
 
 from . import dialogs
+from .itemview import ItemView
 
 
 class MainApplication(QMainWindow):
@@ -56,6 +57,7 @@ class MainApplication(QMainWindow):
 		self.setCentralWidget(self.content_pane)
 
 		top_layout = QHBoxLayout(spacing=0)
+		top_layout.setContentsMargins(0, 0, 0, 0)
 		self.content_pane.setLayout(top_layout)
 
 		self.feed_aggregate = AggregateFeedModel(
@@ -63,11 +65,18 @@ class MainApplication(QMainWindow):
 				item.pub_date.timestamp() if item.pub_date else datetime.datetime.now(pytz.utc).timestamp()
 			)
 		)
+
 		sidebar = QListView(self.content_pane)
+		sidebar.setFixedWidth(300)
 		sidebar.setItemDelegate(FeedItemDelegate(sidebar))
 		sidebar.setModel(self.feed_aggregate)
+		sidebar.selectionModel().selectionChanged.connect(self._change_item)
+
+		self._content = ItemView(parent=self)
+		self._content.setContentsMargins(5, 5, 5, 5)
 
 		top_layout.addWidget(sidebar)
+		top_layout.addWidget(self._content)
 
 	def _setup(self):
 		self.try_fetch(self.loaded_feeds.values())
@@ -125,6 +134,12 @@ class MainApplication(QMainWindow):
 		self.refresh_action = QAction("&Refresh", self)
 		self.refresh_action.triggered.connect(self.refresh_feeds)
 		toolbar.addAction(self.refresh_action)
+	
+	def _change_item(self, selection: QItemSelection):
+		indexes = selection.indexes()
+		if indexes:
+			index = indexes[0]
+			self._content.set_item(index.data(role=Qt.DisplayRole))
 
 	def on_new_feed(self):
 		dialog = dialogs.NewFeed()
@@ -133,14 +148,11 @@ class MainApplication(QMainWindow):
 		dialog.exec_()
 
 	def refresh_feeds(self):
-		# TODO - what if fetch fails?
 		self.refresh_action.setEnabled(False)
-		# self.fetcher.fetch_all(
-		# 	[feed_definition.url for feed_definition in self.loaded_feeds.values()],
-		# 	functools.partial(
-		# 		self.on_fetch_batch
-		# 	)
-		# )
+
+		batch = tasks.Batch([tasks.FetchTask(feed_definition.url) for feed_definition in self.loaded_feeds.values()])
+		batch.complete.connect(self.on_fetch_batch)
+		batch.start(self.executor)
 
 	def new_feed(self, url):
 		task = tasks.FetchTask(url)
@@ -207,15 +219,12 @@ class MainApplication(QMainWindow):
 				if not feed_def.cache_key:
 					feed_def.cache_key = str(uuid.uuid4())
 
-				io_tasks.append(concurrency.CacheTask(self.channels, feed_def.cache_key, result))
+				io_tasks.append(iotasks.CacheTask(self.channels, feed_def.cache_key, result))
 
 				self.feed_aggregate.add(result)
 
-		# TODO - trigger refresh re-enabled AFTER save task(s)
-		self.refresh_action.setEnabled(True)
-
 		io_tasks.append(
-			concurrency.JSONSaveTask(
+			iotasks.JSONSaveTask(
 				models.FeedDefinition.to_multiple(self.loaded_feeds.values()), os.path.join(config.USER_DATA, 'feeds.json')
 			)
 		)
@@ -228,6 +237,8 @@ class MainApplication(QMainWindow):
 		for result in results:
 			if result.error:
 				logging.error("{}: {}".format(result.error.__class__.__name__, str(result.error)))
+		
+		self.refresh_action.setEnabled(True)
 
 	@classmethod
 	def on_fetch_fail(cls, exc: Exception):

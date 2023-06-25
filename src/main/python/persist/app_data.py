@@ -1,6 +1,6 @@
 import config
 import models
-from .concurrency import JSONSaveTask
+from .tasks import JSONSaveTask
 
 import os
 from typing import Tuple, Iterable, Union

@@ -33,8 +33,7 @@ class MainApplicationContext(ApplicationContext):
 
         window = MainApplication(self)
         window.setStyleSheet(style)
-        window.resize(450, 300)
-        window.setMinimumSize(450, 300)
+        window.setMinimumSize(600, 400)
         window.show()
         return self.app.exec_()
 

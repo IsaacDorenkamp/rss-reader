@@ -16,7 +16,7 @@ class SaveTask(tasks.Task):
         super().__init__()
         self.path = path
 
-    def run(self):
+    def execute(self):
         with open(self.path, 'w') as fp:
             lockfile.lock(fp)
             self.save(fp)
@@ -25,6 +25,9 @@ class SaveTask(tasks.Task):
     # disables use of Python's abstract base classes
     def save(self, fp: IO[str]):
         raise NotImplementedError()
+    
+    def __str__(self):
+        return f"save to \"{self.path}\""
 
 
 class JSONSaveTask(SaveTask):
@@ -34,6 +37,9 @@ class JSONSaveTask(SaveTask):
 
     def save(self, fp: IO[str]):
         json.dump(self.data, fp)
+    
+    def __str__(self):
+        return "json " + super().__str__()
 
 
 class CacheTask(tasks.Task, Generic[T]):
@@ -43,5 +49,8 @@ class CacheTask(tasks.Task, Generic[T]):
         self.key = key
         self.value = value
 
-    def run(self):
+    def execute(self):
         self.cache.set(self.key, self.value)
+
+    def __str__(self):
+        return f"saving cache entry {self.key}"
