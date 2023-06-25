@@ -3,6 +3,8 @@ from __future__ import annotations
 import enum
 from functools import reduce
 import collections.abc
+import re
+import sys
 from typing import Dict, Any, TypeVar, Type
 import xml.etree.ElementTree as ETree
 
@@ -270,8 +272,11 @@ class XMLEntityDef(metaclass=XMLEntityMeta):
 			except XMLEntityConstraintError as xmlerr:
 				raise XMLEntityConstraintError(str(xmlerr) % field)
 			
-			if isinstance(data[field], XMLEntity):
+			if processor.rule.is_single() and isinstance(data[field], XMLEntityDef):
 				data[field]._parent = result
+			elif processor.rule.is_multiple() and any([isinstance(item, XMLEntityDef) for item in data[field]]):
+				for item in data[field]:
+					item._parent = result
 		
 		return result
 
@@ -305,7 +310,7 @@ class XMLEntityDef(metaclass=XMLEntityMeta):
 
 	@classmethod
 	def from_dict(cls, source: Dict[str, Any]) -> X:
-		values = {}
+		data = {}
 		for key, processor in cls.__xmltypes__.values():
 			try:
 				value = source[key]
@@ -313,40 +318,54 @@ class XMLEntityDef(metaclass=XMLEntityMeta):
 				if isinstance(processor, XMLEntity):
 					subtype = processor.type
 					if value is None:
-						values[key] = None
+						data[key] = None
 					else:
 						if processor.rule.is_multiple():
-							values[key] = list(subtype.from_dict(item) for item in value)
+							data[key] = list(subtype.from_dict(item) for item in value)
 						else:
-							values[key] = subtype.from_dict(value)
+							data[key] = subtype.from_dict(value)
 				else:
 					try:
-						values[key] = processor.process(value or '')
+						data[key] = processor.process(value or '')
 					except ValueError:
-						values[key] = None
+						data[key] = None
 			except KeyError:
 				if processor.rule.is_required():
 					raise ValueError("source missing expected key '%s'" % key)
 				else:
-					values[key] = None
+					data[key] = None
 
 		for key in cls.__xmlattributes__.keys():
 			try:
-				values[key] = source[key]
+				data[key] = source[key]
 			except KeyError:
 				raise ValueError("source missing expected key '%s'" % key)
 
 		if cls.__xmltext__ is not None:
 			key = cls.__xmltext__[0]
 			try:
-				values[key] = source[key]
+				data[key] = source[key]
 			except KeyError:
 				raise ValueError("source missing expected key '%s'" % key)
 
 		for destination_key, source_key in cls.INCLUDE.items():
-			values[destination_key] = source.get(source_key)
+			data[destination_key] = source.get(source_key)
 
-		return cls(**values)
+		result = cls(**data)
+		for pair in cls.__xmltypes__.values():
+			field, processor = pair
+			try:
+				processor.rule.validate(data[field])
+			except XMLEntityConstraintError as xmlerr:
+				raise XMLEntityConstraintError(str(xmlerr) % field)
+			
+			if processor.rule.is_single() and isinstance(data[field], XMLEntityDef):
+				data[field]._parent = result
+			elif processor.rule.is_multiple() and any([isinstance(item, XMLEntityDef) for item in data[field]]):
+				for item in data[field]:
+					item._parent = result
+		
+		return result
 
 
 X = TypeVar('X', bound=XMLEntityDef)
@@ -366,3 +385,32 @@ class XMLEntity:
 
 	def from_xml(self, node, strict=True):
 		return self.type.from_xml(node, strict=strict)
+
+
+# SOURCE: https://stackoverflow.com/questions/1707890/fast-way-to-filter-illegal-xml-unicode-chars-in-python
+# These are the characters that make XML invalid. By filtering these out, we can make otherwise valid XML
+# entirely valid.
+_illegal_unichrs = [(0x00, 0x08), (0x0B, 0x0C), (0x0E, 0x1F), 
+                        (0x7F, 0x84), (0x86, 0x9F), 
+                        (0xFDD0, 0xFDDF), (0xFFFE, 0xFFFF)] 
+if sys.maxunicode >= 0x10000:  # not narrow build 
+	_illegal_unichrs.extend([(0x1FFFE, 0x1FFFF), (0x2FFFE, 0x2FFFF), 
+		(0x3FFFE, 0x3FFFF), (0x4FFFE, 0x4FFFF), 
+		(0x5FFFE, 0x5FFFF), (0x6FFFE, 0x6FFFF), 
+		(0x7FFFE, 0x7FFFF), (0x8FFFE, 0x8FFFF), 
+		(0x9FFFE, 0x9FFFF), (0xAFFFE, 0xAFFFF), 
+		(0xBFFFE, 0xBFFFF), (0xCFFFE, 0xCFFFF), 
+		(0xDFFFE, 0xDFFFF), (0xEFFFE, 0xEFFFF), 
+		(0xFFFFE, 0xFFFFF), (0x10FFFE, 0x10FFFF)]) 
+
+_illegal_ranges = ["%s-%s" % (chr(low), chr(high)) 
+                   for (low, high) in _illegal_unichrs] 
+_illegal_chars_regexp = re.compile('[%s]' % ''.join(_illegal_ranges)) 
+
+def clean_invalid_string(raw: str):
+	"""
+	Filters invalid characters out of a string
+	to ensure it can be parsed as valid xml.
+	"""
+
+	return _illegal_chars_regexp.sub("", raw)

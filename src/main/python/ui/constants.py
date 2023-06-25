@@ -6,10 +6,12 @@ import sys
 
 global BASE_FONT
 global MID_FONT
+global MID_FONT_BOLD
 global TITLE_FONT
 
 BASE_FONT = QFont()
 MID_FONT = QFont()
+MID_FONT_BOLD = QFont()
 TITLE_FONT = QFont()
 
 
@@ -27,6 +29,10 @@ def _create_fonts():
 
 	MID_FONT.setFamily(BASE_FONT.family())
 	MID_FONT.setPointSize(14)
+
+	MID_FONT_BOLD.setFamily(BASE_FONT.family())
+	MID_FONT_BOLD.setPointSize(14)
+	MID_FONT_BOLD.setBold(True)
 
 	TITLE_FONT.setFamily(BASE_FONT.family())
 	TITLE_FONT.setPointSize(18)

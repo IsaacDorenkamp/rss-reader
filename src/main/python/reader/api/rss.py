@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+import functools
 from lxml.etree import XMLParser
+from lxml.html import fromstring as html_fromstring
 import typing
 
 from .xml import *
@@ -58,6 +60,10 @@ class Item(XMLEntityDef):
 
     # These are our custom attributes which we use to track item state.
     read: bool = XMLPrimitive('read', bool_, rule=XMLEntityRule.SINGLE_OPTIONAL)
+
+    @functools.cached_property
+    def plain_description(self):
+        return html_fromstring(self.description).text_content().strip()
 
     def __eq__(self, other: Item) -> bool:
         if self._parent and other._parent:
@@ -183,8 +189,8 @@ class RSSError(Exception):
 
 
 def parse_feed(source: str, strict: bool = False) -> Channel:
-    parser = XMLParser(recover=True)
-    parser.feed(source)
+    parser = XMLParser()
+    parser.feed(clean_invalid_string(source))
     tree = parser.close()
 
     assert tree.tag == "rss", RSSError("Expected rss for root element, got '%s' instead" % tree.tag)

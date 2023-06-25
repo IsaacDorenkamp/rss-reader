@@ -1,29 +1,34 @@
 from PyQt5.QtWidgets import QMainWindow, QAction, QListView, QHBoxLayout, QWidget, QMessageBox
+from PyQt5.QtCore import QThreadPool
+
 import datetime
 import functools
 import logging
+import lxml.etree
 import os
 import pytz
 import time
+from typing import Dict, Iterable, List
+import requests
 import uuid
-from typing import Dict, Union, Iterable, List
 
 import config
-from . import dialogs
-from concurrency import tasks, fetcher
-from ui.delegates import FeedItemDelegate
-from ui.models import AggregateFeedModel
-from persist import app_data, caching, concurrency
-from reader.api.rss import Channel
-from reader.api.xml import XMLEntityConstraintError
+from concurrency import tasks
 import main
 import models
+from persist import app_data, caching, concurrency
+from reader.api import rss, xml
+from reader.api.rss import Channel
+from reader.api.xml import XMLEntityConstraintError
+from ui.delegates import FeedItemDelegate
+from ui.models import AggregateFeedModel
+
+from . import dialogs
 
 
 class MainApplication(QMainWindow):
 	__ctx: main.MainApplicationContext
-	tasks: tasks.TaskManager
-	fetcher: fetcher.Fetcher
+	tasks: QThreadPool
 	channels: caching.ChannelMultiCache
 	loaded_feeds: Dict[str, models.FeedDefinition]
 
@@ -32,8 +37,7 @@ class MainApplication(QMainWindow):
 
 		self.__ctx = ctx
 		self.loaded_feeds = ctx.loaded_feeds.copy()
-		self.tasks = tasks.BackgroundTasks()
-		self.fetcher = fetcher.Fetcher(task_manager=self.tasks)
+		self.executor = QThreadPool.globalInstance()
 		self.channels = caching.ChannelMultiCache()
 
 		self._setup_ui()
@@ -99,11 +103,11 @@ class MainApplication(QMainWindow):
 
 		# fetch non-cached entries
 		if to_fetch:
-			self.fetcher.fetch_all([feed_definition.url for feed_definition in to_fetch], functools.partial(
-				self.on_fetch_batch, cached=results
-			))
+			batch = tasks.Batch([tasks.FetchTask(feed_definition.url) for feed_definition in to_fetch])
+			batch.complete.connect(functools.partial(self.on_fetch_batch, cached=results))
+			batch.start(self.executor)
 		elif results:
-			self.on_fetch_batch({}, cached=results)
+			self.on_fetch_batch([], cached=results)
 
 	def _setup_menubar(self):
 		menu_bar = self.menuBar()
@@ -119,7 +123,7 @@ class MainApplication(QMainWindow):
 		toolbar = self.addToolBar("Feeds")
 
 		self.refresh_action = QAction("&Refresh", self)
-		self.refresh_action.triggered.connect(self.refresh)
+		self.refresh_action.triggered.connect(self.refresh_feeds)
 		toolbar.addAction(self.refresh_action)
 
 	def on_new_feed(self):
@@ -128,29 +132,37 @@ class MainApplication(QMainWindow):
 		dialog.show()
 		dialog.exec_()
 
-	def refresh(self):
+	def refresh_feeds(self):
 		# TODO - what if fetch fails?
 		self.refresh_action.setEnabled(False)
-		self.fetcher.fetch_all(
-			[feed_definition.url for feed_definition in self.loaded_feeds.values()],
-			functools.partial(
-				self.on_fetch_batch
-			)
-		)
+		# self.fetcher.fetch_all(
+		# 	[feed_definition.url for feed_definition in self.loaded_feeds.values()],
+		# 	functools.partial(
+		# 		self.on_fetch_batch
+		# 	)
+		# )
 
 	def new_feed(self, url):
-		if self.feed_aggregate.has_url(url):
-			# Ignore existing urls
+		task = tasks.FetchTask(url)
+		task.signals.finished.connect(self.on_fetch_new)
+		self.executor.start(task)
+
+	def on_fetch_new(self, result: tasks.TaskResult[Channel]):
+		if result.error:
+			if isinstance(result.error, requests.RequestException):
+				self.show_error("Feed data could not be retrieved.")
+			elif isinstance(result.error, (xml.XMLEntityError, rss.RSSError, lxml.etree.XMLSyntaxError)):
+				self.show_error("Data does not represent a valid RSS feed.")
+			else:
+				logging.error("%s - %s" % (result.error.__class__.__name__, str(result.error)))
+				self.show_error("An unknown error occurred.")
 			return
 
-		# TODO - finish implementing this
-		task = tasks.FetchTask(url)
-		
-		# task.success.connect(self.on_fetch_new)
-		# task.failure.connect(self.on_fetch_fail)
-		# self.tasks.start_task(task)
+		channel = result.data
+		if channel.link in [feed.channel for feed in self.loaded_feeds.values()]:
+			self.show_error("A feed for that site already exists!")
+			return
 
-	def on_fetch_new(self, channel: Channel):
 		feed_definition = self.loaded_feeds.get(channel.ref)
 		if feed_definition:
 			if feed_definition.cache_key:
@@ -165,24 +177,25 @@ class MainApplication(QMainWindow):
 			self.loaded_feeds[channel.ref] = feed_definition
 
 		save_task = app_data.create_save_feeds_task(self.loaded_feeds.values())
-		self.tasks.start_task(save_task)
+		self.executor.start(save_task)
 
 		self.channels.set(cache_key, channel, ex=(60 * 60 * 24 * 7))
 		self.feed_aggregate.add(channel)
 
-	def on_fetch_batch(self, results: Dict[str, Union[Channel, Exception]], **kw):
+	def on_fetch_batch(self, results: List[tasks.TaskResult[Channel]], **kw):
 		cached = kw.get('cached', None)
 		if cached:
 			for channel in cached.values():
 				logging.info("using cached feed - {}".format(channel.ref))
 				self.feed_aggregate.add(channel)
 
-		save_tasks = []
-		for url, result in results.items():
-			if isinstance(result, Exception):
+		io_tasks = []
+		for result in results:
+			if result.error:
 				# TODO: GUI Error Display
-				logging.error("{}: {}".format(result.__class__.__name__, str(result)))
+				logging.error("{}: {}".format(result.error.__class__.__name__, str(result.error)))
 			else:
+				result = result.data
 				if result.ref in self.loaded_feeds:
 					feed_def = self.loaded_feeds[result.ref]
 					feed_def.update(result)
@@ -190,25 +203,31 @@ class MainApplication(QMainWindow):
 					feed_def = models.FeedDefinition.from_channel(result)
 					self.loaded_feeds[feed_def.url] = feed_def
 
+				feed_def.last_retrieved = int(time.time())
 				if not feed_def.cache_key:
 					feed_def.cache_key = str(uuid.uuid4())
 
-				feed_def.last_retrieved = int(time.time())
-
-				save_tasks.append(concurrency.CacheTask(self.channels, feed_def.cache_key, result))
+				io_tasks.append(concurrency.CacheTask(self.channels, feed_def.cache_key, result))
 
 				self.feed_aggregate.add(result)
 
 		# TODO - trigger refresh re-enabled AFTER save task(s)
 		self.refresh_action.setEnabled(True)
 
-		save_tasks.append(
+		io_tasks.append(
 			concurrency.JSONSaveTask(
 				models.FeedDefinition.to_multiple(self.loaded_feeds.values()), os.path.join(config.USER_DATA, 'feeds.json')
 			)
 		)
 
-		self.tasks.start_all(save_tasks)
+		io_batch = tasks.Batch(io_tasks)
+		io_batch.complete.connect(self._io_complete)
+		io_batch.start(self.executor)
+	
+	def _io_complete(self, results: tasks.TaskResult):
+		for result in results:
+			if result.error:
+				logging.error("{}: {}".format(result.error.__class__.__name__, str(result.error)))
 
 	@classmethod
 	def on_fetch_fail(cls, exc: Exception):

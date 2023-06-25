@@ -21,11 +21,8 @@ class SaveTask(tasks.Task):
             lockfile.lock(fp)
             self.save(fp)
 
-        self.complete.emit()
-
-    # See comment about tasks.Task.run to
-    # for reasons abc.abstractmethod is not
-    # used here.
+    # Conflict between ABCMeta and QObject metaclass
+    # disables use of Python's abstract base classes
     def save(self, fp: IO[str]):
         raise NotImplementedError()
 

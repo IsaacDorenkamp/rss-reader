@@ -124,10 +124,11 @@ def parse_value(json_type_def: Union[type, Multiple, J], value: Any) -> Any:
 
 
 class FeedDefinition(JSONModel):
-    _required = ['url', 'last_retrieved']
+    _required = ['url', 'channel', 'last_retrieved']
 
     nickname: str = str
     url: str = str
+    channel: str = str
     cache_key: str = str
     last_retrieved: int = int  # timestamp when the feed was last retrieved, a rounded result of time.time().
     ttl: int = int  # TTL in seconds
@@ -142,8 +143,8 @@ class FeedDefinition(JSONModel):
 
     @staticmethod
     def from_channel(channel):
-        return FeedDefinition(nickname=channel.title, url=channel.ref, cache_key=None, last_retrieved=int(time.time()),
-                              ttl=(channel.ttl or 0) * 60,
+        return FeedDefinition(nickname=channel.title, url=channel.ref, channel=channel.link, cache_key=None,
+                              last_retrieved=int(time.time()), ttl=(channel.ttl or 0) * 60,
                               skip_days=[dateutil.WEEKDAYS[day] for day in (channel.skip_days or []) if day in
                                          dateutil.WEEKDAYS.keys()],
                               skip_hours=[hour % 24 for hour in channel.skip_hours or []])

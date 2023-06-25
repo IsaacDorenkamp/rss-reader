@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from PyQt5.QtCore import QObject, QThread, pyqtSignal
+from PyQt5.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 import requests
 import functools
-from typing import Generic, Tuple, TypeVar, Union
+from typing import Any, Generic, List, Optional, Tuple, TypeVar
 
 from reader.api import rss, xml
 
@@ -11,54 +11,39 @@ from reader.api import rss, xml
 T = TypeVar('T')
 
 
-class Task(QObject, Generic[T]):
-	finished = pyqtSignal()
+class TaskResult(Generic[T]):
+	data: Optional[T]
+	error: Optional[BaseException]
 
-	result: Tuple[bool, Union[T, BaseException]] = None  # tuple is structured to be (is_error, result_or_exception)
+	def __init__(self, data: Optional[T], error: Optional[BaseException]=None):
+		self.data = data
+		self.error = error
+
+
+class TaskSignaller(QObject):
+	finished = pyqtSignal(TaskResult)
 
 	def __init__(self):
 		super().__init__()
 
-	def run(self) -> T:
-		raise NotImplementedError()
-	
-	def handle_error(self, error: BaseException):
-		raise NotImplementedError()
-	
-	def handle_result(self, result: T):
-		raise NotImplementedError()
-	
-	def execute(self):
-		try:
-			self.result = (False, self.run())
-		except BaseException as exc:
-			self.result = (True, exc)
-		finally:
-			self.finished.emit()
 
+class Task(QRunnable, Generic[T]):
+	signals: TaskSignaller
 
-class BackgroundTasks:
 	def __init__(self):
-		self._tasks = []
+		super().__init__()
+		self.signals = TaskSignaller()
 
-	def execute(self, worker: Task):
-		thread = QThread()
-		worker.moveToThread(thread)
-		worker.finished.connect(thread.quit)
-		worker.finished.connect(functools.partial(self._complete, thread, worker))
-		thread.finished.connect(thread.deleteLater)
-		thread.start()
-		self._tasks.append((thread, worker))
+	def execute(self) -> T:
+		raise NotImplementedError()
 	
-	def _complete(self, thread: QThread, worker: Task):
-		is_error, result_or_error = worker.result
-		if is_error:
-			worker.error_handler(result_or_error)
-		else:
-			worker.callback(result_or_error)
-
-		worker.deleteLater()
-		self._tasks.remove((thread, worker))
+	def run(self):
+		try:
+			result = TaskResult(self.execute())
+		except BaseException as exc:
+			result = TaskResult(None, exc)
+		
+		self.signals.finished.emit(result)
 
 
 class FetchTask(Task[rss.Channel]):
@@ -68,7 +53,7 @@ class FetchTask(Task[rss.Channel]):
 		super().__init__()
 		self.url = url
 
-	def run(self) -> rss.Channel:
+	def execute(self) -> rss.Channel:
 		response = requests.get(self.url, headers={
 			"Accept": "application/rss+xml"
 		})
@@ -79,14 +64,24 @@ class FetchTask(Task[rss.Channel]):
 		channel.ref = self.url
 		return channel
 
-	# TODO - implement these lol
-	def handle_error(self, error: BaseException):
-		if isinstance(error, requests.RequestException):
-			pass
-		elif isinstance(error, (rss.RSSError, xml.XMLEntityError)):
-			pass
-		else:
-			pass
 
-	def handle_result(self, result: rss.Channel):
-		pass
+class Batch(QObject, Generic[T]):
+	complete = pyqtSignal(list)
+	results: List[TaskResult]
+
+	_tasks: List[Task[T]]
+
+	def __init__(self, tasks: List[Task[T]]):
+		super().__init__()
+		self._tasks = tasks
+		self.results = [None for _ in tasks]
+	
+	def start(self, pool: QThreadPool):
+		for idx, task in enumerate(self._tasks):
+			task.signals.finished.connect(functools.partial(self._complete, idx))
+			pool.start(task)
+	
+	def _complete(self, index: int, result: TaskResult):
+		self.results[index] = result
+		if all([item is not None for item in self.results]):
+			self.complete.emit(self.results)

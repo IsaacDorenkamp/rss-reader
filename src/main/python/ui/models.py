@@ -42,6 +42,8 @@ class AggregateFeedModel(QtCore.QAbstractListModel):
 	def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Union[Item, QtCore.QSize, None]:
 		if role == Qt.DisplayRole:
 			return self._items[index.row()]
+		elif role == Qt.ToolTipRole:
+			return self._items[index.row()].title
 
 	def add(self, value: Channel):
 		for item in value.items:
@@ -59,6 +61,9 @@ class AggregateFeedModel(QtCore.QAbstractListModel):
 
 			if should_insert:
 				self.endInsertRows()
+		
+		if self._loaded < self.fetch_batch_size:
+			self.fetchMore(QModelIndex())
 
 	def has_url(self, url: str) -> bool:
 		return any(map(lambda item: item._parent.link == url or item._parent.ref == url, self._items))
