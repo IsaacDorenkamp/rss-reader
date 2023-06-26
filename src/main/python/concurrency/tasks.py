@@ -74,6 +74,8 @@ class FetchTask(Task[rss.Channel]):
 
 
 class Batch(QObject, Generic[T]):
+	_REGISTRY = []  # keep batches loaded in memory while running
+
 	complete = pyqtSignal(list)
 	results: List[TaskResult]
 
@@ -89,6 +91,7 @@ class Batch(QObject, Generic[T]):
 			self.complete.emit([])
 			return
 
+		Batch._REGISTRY.append(self)
 		for idx, task in enumerate(self._tasks):
 			task.signals.finished.connect(functools.partial(self._complete, idx))
 			pool.start(task)
@@ -97,3 +100,4 @@ class Batch(QObject, Generic[T]):
 		self.results[index] = result
 		if all([item is not None for item in self.results]):
 			self.complete.emit(self.results)
+			Batch._REGISTRY.remove(self)

@@ -1,4 +1,4 @@
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QIcon
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
 
 import json
@@ -43,9 +43,19 @@ resources = {
 	"style/main": {
 		"file": "main.qss",
 	},
-	"style/colors": {
+	"palette": {
 		"file": "palette.json",
 		"load": json.load
+	},
+	"icons/plus": {
+		"file": "icons/png/13.png",
+		"open": False,
+		"load": QIcon
+	},
+	"icons/refresh": {
+		"file": "icons/png/42.png",
+		"open": False,
+		"load": QIcon
 	}
 }
 
@@ -59,8 +69,12 @@ def _load_resources(context: ApplicationContext):
 		filename = context.get_resource(resource_definition["file"])
 		loader = resource_definition.get("load", _read_file)
 		try:
-			with open(filename, 'r', encoding='utf-8') as fp:
-				resources[key] = loader(fp)
+			should_open = resource_definition.get("open", True)
+			if should_open:
+				with open(filename, 'r', encoding='utf-8') as fp:
+					resources[key] = loader(fp)
+			else:
+				resources[key] = loader(filename)
 		except (IOError, json.decoder.JSONDecodeError) as exc:
 			fatal(exc)
 

@@ -59,7 +59,7 @@ class Item(XMLEntityDef):
     title: str = XMLPrimitive('title', str, rule=XMLEntityRule.SINGLE_OPTIONAL)
 
     # These are our custom attributes which we use to track item state.
-    read: bool = XMLPrimitive('read', bool_, rule=XMLEntityRule.SINGLE_OPTIONAL)
+    read: bool = False
 
     @functools.cached_property
     def plain_description(self):
@@ -101,6 +101,10 @@ class Item(XMLEntityDef):
             return self._parent == channel
         else:
             return False
+    
+    @property
+    def channel(self) -> Channel:
+        return self._parent
 
 
 class Channel(XMLEntityDef):

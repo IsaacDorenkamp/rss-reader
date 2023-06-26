@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import time
 from util import dateutil
-from typing import Generator, Union, Any, Tuple, TypeVar, IO, Dict, List, Iterable
+from typing import Any, Dict, Generator, IO, Iterable, List, Optional, Tuple, TypeVar, Union
 
 from reader.api import rss
 
@@ -13,11 +13,11 @@ class Multiple:
 
     def expand(self, value):
         if isinstance(self.type, type) and issubclass(self.type, JSONModel):
-            return tuple(item.to_dict() for item in value)
+            return list(item.to_dict() for item in value)
         elif isinstance(self.type, Multiple):
-            return tuple(self.type.expand(item) for item in value)
+            return list(self.type.expand(item) for item in value)
         else:
-            return tuple(value)
+            return list(value)
 
 
 class JSONModelMeta(type):
@@ -83,8 +83,8 @@ class JSONModel(metaclass=JSONModelMeta):
         json.dump(self.to_dict(), dest)
 
     @staticmethod
-    def to_multiple(items: Iterable[J]) -> Tuple[Dict[str, Any]]:
-        return tuple(item.to_dict() for item in items)
+    def to_multiple(items: Iterable[J]) -> List[Dict[str, Any]]:
+        return list(item.to_dict() for item in items)
 
     @classmethod
     def from_dict(cls, source: dict) -> JSONModel:
@@ -102,7 +102,7 @@ class JSONModel(metaclass=JSONModelMeta):
     def load_multiple(cls, source: IO[str]):
         array = json.load(source)
         assert isinstance(array, (list, tuple)), "File does not define an array"
-        return tuple(cls.from_dict(source) for source in array)
+        return list(cls.from_dict(source) for source in array)
 
     @staticmethod
     def save_multiple(items: Iterable[J], dest: IO[str]):
@@ -116,7 +116,7 @@ def parse_value(json_type_def: Union[type, Multiple, J], value: Any) -> Any:
     if value is None:
         return None
     elif isinstance(json_type_def, Multiple):
-        return tuple(parse_value(json_type_def.type, item) for item in value)
+        return list(parse_value(json_type_def.type, item) for item in value)
     elif hasattr(json_type_def, '__json_fields__'):
         return json_type_def.from_dict(value)
     else:
@@ -148,3 +148,39 @@ class FeedDefinition(JSONModel):
                               skip_days=[dateutil.WEEKDAYS[day] for day in (channel.skip_days or []) if day in
                                          dateutil.WEEKDAYS.keys()],
                               skip_hours=[hour % 24 for hour in channel.skip_hours or []])
+
+
+class ItemMeta(JSONModel):
+    _required = ["channel", "read"]
+
+    channel: str = str
+    guid: Optional[str] = str
+    title: Optional[str] = str
+
+    read: bool = bool
+
+
+class AppMeta(JSONModel):
+    _required = ["items"]
+
+    items: List[ItemMeta] = Multiple(ItemMeta)
+
+    def find_item(self, channel: str, guid: Optional[str] = None, title: Optional[str] = None) -> int:
+        """
+        Find an ItemMeta by its identifying channel and guid (or title). If guid and title are provided,
+        title will be ignored in favor of the more reliable guid.
+        """
+
+        if not (guid or title):
+            return -1
+
+        if guid:
+            predicate = lambda x: x.channel == channel and x.guid == guid
+        else:
+            predicate = lambda x: x.channel == channel and x.title == title
+        
+        for idx, item in enumerate(self.items):
+            if predicate(item):
+                return idx
+        
+        return -1

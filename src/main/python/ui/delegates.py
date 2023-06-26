@@ -47,13 +47,15 @@ class FeedItemDelegate(QtWidgets.QStyledItemDelegate):
     def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex):
         if option.state & QStyle.State_Selected:
             painter.fillRect(option.rect, option.palette.highlight())
+        else:
+            painter.fillRect(option.rect, option.palette.base())
 
         item: Item = index.data(role=Qt.DisplayRole)
         description: str = item.plain_description
 
         item_box, desc_offset, title = self._render(item, option)
 
-        painter.setBrush(option.palette.text())
+        painter.setPen(option.palette.text().color())
         painter.setFont(MID_FONT_BOLD if not item.read else MID_FONT)
         painter.drawText(item_box, Qt.TextSingleLine, title)
 

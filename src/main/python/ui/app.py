@@ -1,5 +1,6 @@
+from fbs_runtime import PUBLIC_SETTINGS
 from PyQt5.QtWidgets import QMainWindow, QAction, QListView, QHBoxLayout, QWidget, QMessageBox
-from PyQt5.QtCore import QThreadPool, QItemSelection, Qt
+from PyQt5.QtCore import QCoreApplication, QThreadPool, QItemSelection, Qt
 
 import datetime
 import functools
@@ -19,12 +20,11 @@ import models
 from persist import app_data, caching, tasks as iotasks
 from reader.api import rss, xml
 from reader.api.rss import Channel
-from reader.api.xml import XMLEntityConstraintError
 from ui.delegates import FeedItemDelegate
 from ui.models import AggregateFeedModel
 
-from . import dialogs
-from .itemview import ItemView
+from . import constants, dialogs
+from .views import ItemView
 
 
 class MainApplication(QMainWindow):
@@ -45,7 +45,7 @@ class MainApplication(QMainWindow):
 		self._setup()
 
 	def _setup_ui(self):
-		version = self.__ctx.build_settings['version']
+		version = PUBLIC_SETTINGS['version']
 		self.setWindowTitle(f"RSS Reader v{version}")
 
 		self._setup_menubar()
@@ -66,22 +66,30 @@ class MainApplication(QMainWindow):
 			)
 		)
 
-		sidebar = QListView(self.content_pane)
+		self.items = sidebar = QListView(self.content_pane)
 		sidebar.setFixedWidth(300)
 		sidebar.setItemDelegate(FeedItemDelegate(sidebar))
 		sidebar.setModel(self.feed_aggregate)
 		sidebar.selectionModel().selectionChanged.connect(self._change_item)
 
 		self._content = ItemView(parent=self)
-		self._content.setContentsMargins(5, 5, 5, 5)
+		self._content.setObjectName("item-view")
+		self._content.setContentsMargins(0, 0, 0, 0)
 
 		top_layout.addWidget(sidebar)
 		top_layout.addWidget(self._content)
 
 	def _setup(self):
-		self.try_fetch(self.loaded_feeds.values())
+		self.try_fetch(self.loaded_feeds.values(), autoselect=True)
 
-	def try_fetch(self, feed_definitions: Iterable[models.FeedDefinition]):
+	def try_fetch(self, feed_definitions: Iterable[models.FeedDefinition], autoselect=False):
+		"""
+		Determine which which feeds should be re-fetched and which cached
+		feeds should be relevant based upon their skip days, skip hours,
+		and TTL (time to live). If autoselect is true, the UI will automatically
+		select the latest feed item when they are loaded.
+		"""
+
 		now = datetime.datetime.now(pytz.utc)
 		to_fetch: List[models.FeedDefinition] = []
 		results: Dict[str, Channel] = {}
@@ -103,35 +111,52 @@ class MainApplication(QMainWindow):
 					skip_hours = feed_definition.skip_hours or []
 
 					if now.weekday() in skip_days or now.hour in skip_hours:
-						results[feed_definition.url] = cached
+						results[feed_definition.channel] = cached
 					else:
 						if now.timestamp() > feed_definition.last_retrieved + ttl:
 							to_fetch.append(feed_definition)
 						else:
-							results[feed_definition.url] = cached
+							results[feed_definition.channel] = cached
 
 		# fetch non-cached entries
 		if to_fetch:
 			batch = tasks.Batch([tasks.FetchTask(feed_definition.url) for feed_definition in to_fetch])
-			batch.complete.connect(functools.partial(self.on_fetch_batch, cached=results))
+			batch.complete.connect(functools.partial(self.on_fetch_batch, cached=results, autoselect=autoselect))
 			batch.start(self.executor)
 		elif results:
-			self.on_fetch_batch([], cached=results)
+			self.on_fetch_batch([], cached=results, autoselect=autoselect)
 
 	def _setup_menubar(self):
 		menu_bar = self.menuBar()
 
-		new_feed = QAction("New Feed", self)
-		new_feed.setShortcut("Ctrl+N")
-		new_feed.triggered.connect(self.on_new_feed)
+		quit_action = QAction("Quit", self)
+		quit_action.setShortcut("Ctrl+Q")
+		quit_action.triggered.connect(self.exit_app)
 
-		feeds = menu_bar.addMenu("&Feeds")
+		file = menu_bar.addMenu("&File")
+		file.addAction(quit_action)
+
+		new_feed = QAction("Subscribe to Feed", self)
+		new_feed.setShortcut("Ctrl+N")
+		new_feed.triggered.connect(self.start_new_feed)
+
+		refresh_feeds = QAction("Refresh all feeds", self)
+		refresh_feeds.setShortcut("F5")
+		refresh_feeds.triggered.connect(self.refresh_feeds)
+
+		feeds = menu_bar.addMenu("F&eeds")
 		feeds.addAction(new_feed)
+		feeds.addAction(refresh_feeds)
 	
 	def _setup_toolbar(self):
 		toolbar = self.addToolBar("Feeds")
+		toolbar.setMovable(False)
 
-		self.refresh_action = QAction("&Refresh", self)
+		add_action = QAction(constants.resources["icons/plus"], "Subscribe to Feed", self)
+		add_action.triggered.connect(self.start_new_feed)
+		toolbar.addAction(add_action)
+
+		self.refresh_action = QAction(constants.resources["icons/refresh"], "&Refresh", self)
 		self.refresh_action.triggered.connect(self.refresh_feeds)
 		toolbar.addAction(self.refresh_action)
 	
@@ -139,9 +164,30 @@ class MainApplication(QMainWindow):
 		indexes = selection.indexes()
 		if indexes:
 			index = indexes[0]
-			self._content.set_item(index.data(role=Qt.DisplayRole))
+			item = index.data(role=Qt.DisplayRole)
+			item.read = True
 
-	def on_new_feed(self):
+			# modify item metadata
+			meta_idx = self.__ctx.app_meta.find_item(
+				channel=item.channel.link,
+				guid=item.guid.value if item.guid else None,
+				title=item.title
+			)
+			if meta_idx >= 0:
+				meta = self.__ctx.app_meta.items[meta_idx]
+				meta.read = True
+			else:
+				meta = models.ItemMeta(
+					channel=item.channel.link,
+					guid=item.guid.value if item.guid else None,
+					title=item.title if not item.guid else None,
+					read=True,
+				)
+				self.__ctx.app_meta.items.append(meta)
+
+			self._content.set_item(item)
+
+	def start_new_feed(self):
 		dialog = dialogs.NewFeed()
 		dialog.new_feed.connect(self.new_feed)
 		dialog.show()
@@ -175,7 +221,7 @@ class MainApplication(QMainWindow):
 			self.show_error("A feed for that site already exists!")
 			return
 
-		feed_definition = self.loaded_feeds.get(channel.ref)
+		feed_definition = self.loaded_feeds.get(channel.link)
 		if feed_definition:
 			if feed_definition.cache_key:
 				cache_key = feed_definition.cache_key
@@ -186,7 +232,7 @@ class MainApplication(QMainWindow):
 			cache_key = str(uuid.uuid4())
 			feed_definition = models.FeedDefinition.from_channel(channel)
 			feed_definition.cache_key = cache_key
-			self.loaded_feeds[channel.ref] = feed_definition
+			self.loaded_feeds[channel.link] = feed_definition
 
 		save_task = app_data.create_save_feeds_task(self.loaded_feeds.values())
 		self.executor.start(save_task)
@@ -198,7 +244,8 @@ class MainApplication(QMainWindow):
 		cached = kw.get('cached', None)
 		if cached:
 			for channel in cached.values():
-				logging.info("using cached feed - {}".format(channel.ref))
+				logging.info("using cached feed - {}".format(channel.link))
+				self._apply_metadata(channel.items, self.__ctx.app_meta)
 				self.feed_aggregate.add(channel)
 
 		io_tasks = []
@@ -208,8 +255,10 @@ class MainApplication(QMainWindow):
 				logging.error("{}: {}".format(result.error.__class__.__name__, str(result.error)))
 			else:
 				result = result.data
-				if result.ref in self.loaded_feeds:
-					feed_def = self.loaded_feeds[result.ref]
+				self._apply_metadata(result.items, self.__ctx.app_meta)
+
+				if result.link in self.loaded_feeds:
+					feed_def = self.loaded_feeds[result.link]
 					feed_def.update(result)
 				else:
 					feed_def = models.FeedDefinition.from_channel(result)
@@ -222,6 +271,9 @@ class MainApplication(QMainWindow):
 				io_tasks.append(iotasks.CacheTask(self.channels, feed_def.cache_key, result))
 
 				self.feed_aggregate.add(result)
+		
+		if kw.get("autoselect", False):
+			self.items.setCurrentIndex(self.feed_aggregate.index(0, 0))
 
 		io_tasks.append(
 			iotasks.JSONSaveTask(
@@ -240,17 +292,15 @@ class MainApplication(QMainWindow):
 		
 		self.refresh_action.setEnabled(True)
 
-	@classmethod
-	def on_fetch_fail(cls, exc: Exception):
-		# TODO: Implement error reporting
-		logging.error("{}: {}".format(exc.__class__.__name__, str(exc)))
-
-		if isinstance(exc, XMLEntityConstraintError):
-			message = "The received RSS feed was invalid."
-		else:
-			message = "Couldn't retrieve the desired feed."
-
-		cls.show_error(message)
+	def _apply_metadata(self, items: List[rss.Item], metadata: models.AppMeta):
+		for item in items:
+			meta_idx = metadata.find_item(channel=item.channel.link, guid=item.guid.value if item.guid else None, title=item.title)
+			if meta_idx >= 0:
+				meta = metadata.items[meta_idx]
+				item.read = meta.read
+	
+	def exit_app(self):
+		QCoreApplication.quit()
 
 	@staticmethod
 	def show_error(message: str):

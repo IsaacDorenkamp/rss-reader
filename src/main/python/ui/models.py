@@ -3,8 +3,8 @@ from PyQt5.QtCore import Qt, QModelIndex
 
 import bisect
 
-from typing import Optional, Union, List, Iterable, Callable, Generator
 from reader.api.rss import Channel, Item
+from typing import Optional, Union, List, Iterable, Callable, Generator
 from util.comparable import Comparable, keyed
 
 
@@ -66,7 +66,7 @@ class AggregateFeedModel(QtCore.QAbstractListModel):
 			self.fetchMore(QModelIndex())
 
 	def has_url(self, url: str) -> bool:
-		return any(map(lambda item: item._parent.link == url or item._parent.ref == url, self._items))
+		return any(map(lambda item: item.channel.link == url or item.channel.ref == url, self._items))
 
 	def rowCount(self, parent: QModelIndex = QModelIndex()):
 		total = self._loaded

@@ -1,6 +1,6 @@
 {
-    "app_name": "RSSReader",
+    "app_name": "rss-reader",
     "author": "Isaac Dorenkamp",
     "main_module": "src/main/python/main.py",
-    "version": "0.0.1"
+    "version": "0.1.0"
 }

@@ -1,18 +1,20 @@
-QWidget#sidebar > * {
-    background-color: %(secondary-bg)s;
-    color: %(text)s;
+QMenuBar {
+    background-color: palette(window);
 }
 
-QScrollArea, #items {
-    background-color: %(primary-bg)s;
-}
-
-QListView#feeds {
+QFrame#item-view QTextEdit {
     border: none;
-    color: %(text)s;
+    border-top: 1px solid palette(base);
 }
 
-#items > ItemView, #items > ItemView > QLabel{
-    background-color: %(secondary-bg)s;
-    color: %(text)s;
+QDialog QLineEdit {
+    background-color: palette(base);
+}
+
+QDialogButtonBox QPushButton {
+    background-color: palette(button);
+    color: palette(button-text);
+    border: 1px solid palette(mid);
+    min-width: 30px;
+    padding: 5px;
 }
