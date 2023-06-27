@@ -7,8 +7,6 @@ TODO
 -------------------
 
 * GUI
-  + Implement status bar
-  + Unsubscribe from feeds
   + Context menu for item list (mark as read/unread, copy link, etc)
   + Add filtering for item list (search by title, filter by channel, etc)
   + Implement media embedding

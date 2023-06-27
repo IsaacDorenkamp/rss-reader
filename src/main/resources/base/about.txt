@@ -1,0 +1,12 @@
+%(app_name)s is an RSS aggregator designed for simplicity
+and easy of use. Instead of burying you in hordes of folders
+and "stuff," all of your subscriptions are internally tracked
+and combined into a single view.
+
+Upcoming versions of %(app_name)s will include more utilities
+to make managing your subscriptions significantly more painless
+and counteract the inconveniences introduced by combining all
+items into a single list without compromising simplicity.
+
+Icons provided by http://www.aha-soft.com/ under the Creative
+Commons License.

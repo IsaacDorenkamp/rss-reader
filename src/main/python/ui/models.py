@@ -10,8 +10,8 @@ from util.comparable import Comparable, keyed
 
 class AggregateFeedModel(QtCore.QAbstractListModel):
 	"""
-	A QT model that tracks multiple channels and adds individual items into a single list in order. Able to handle
-	the adding of new channels that contain items that must be inserted earlier in the sequence.
+	A QT model that tracks multiple channels and adds individual items into a single list in order.
+	Capable of smoothly and accurately handling the addition and removal of new channels in realtime.
 	"""
 
 	DEFAULT_BATCH_SIZE = 10
@@ -54,8 +54,8 @@ class AggregateFeedModel(QtCore.QAbstractListModel):
 
 			should_insert = index < self._loaded
 			if should_insert:
-				self._loaded += 1
 				self.beginInsertRows(QModelIndex(), index, index)
+				self._loaded += 1
 
 			self._items.insert(index, item)
 
@@ -64,6 +64,19 @@ class AggregateFeedModel(QtCore.QAbstractListModel):
 		
 		if self._loaded < self.fetch_batch_size:
 			self.fetchMore(QModelIndex())
+	
+	def remove_channels(self, channels: List[str]):
+		# first, deal with items that are loaded into the UI
+		for i in range(self._loaded - 1, -1, -1):
+			item = self._items[i]
+			if item.channel.link in channels:
+				self.beginRemoveRows(QModelIndex(), i, i)
+				self._items.pop(i)
+				self._loaded -= 1
+				self.endRemoveRows()
+		
+		# then, remove the rest in one fell swoop:
+		self._items = [item for item in self._items if item.channel.link not in channels]
 
 	def has_url(self, url: str) -> bool:
 		return any(map(lambda item: item.channel.link == url or item.channel.ref == url, self._items))

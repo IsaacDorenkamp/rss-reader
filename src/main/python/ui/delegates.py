@@ -39,10 +39,15 @@ class FeedItemDelegate(QtWidgets.QStyledItemDelegate):
         title_metrics = self._unread_title_metrics if not item.read else self._title_metrics
         title_height = title_metrics.height()
         modified_title = title_metrics.elidedText(item.title, Qt.ElideRight, bounds.width())
+
+        channel_height = self._body_metrics.height()
+        modified_channel = self._body_metrics.elidedText(item.channel.title.upper(), Qt.ElideRight, bounds.width())
+
         desc_box = self._body_metrics.boundingRect(bounds, Qt.TextWordWrap, description)
         desc_box.setHeight(min((self._body_metrics.height() * 3), desc_box.height()))
+
         bounds.setHeight(title_height + 10 + desc_box.height())
-        return [bounds, title_height + 10, modified_title]
+        return [bounds, title_height + 5, channel_height + 5, modified_title, modified_channel]
 
     def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex):
         if option.state & QStyle.State_Selected:
@@ -53,14 +58,18 @@ class FeedItemDelegate(QtWidgets.QStyledItemDelegate):
         item: Item = index.data(role=Qt.DisplayRole)
         description: str = item.plain_description
 
-        item_box, desc_offset, title = self._render(item, option)
+        item_box, channel_offset, desc_offset, title, channel = self._render(item, option)
 
         painter.setPen(option.palette.text().color())
         painter.setFont(MID_FONT_BOLD if not item.read else MID_FONT)
         painter.drawText(item_box, Qt.TextSingleLine, title)
 
-        item_box.adjust(0, desc_offset, 0, 0)
+        item_box.adjust(0, channel_offset, 0, 0)
         painter.setFont(BASE_FONT)
+        painter.setPen(option.palette.mid().color())
+        painter.drawText(item_box, Qt.TextSingleLine, channel)
+        item_box.adjust(0, desc_offset, 0, 0)
+        painter.setPen(option.palette.text().color())
         painter.drawText(item_box, Qt.TextWordWrap, description)
 
     def sizeHint(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> QSize:

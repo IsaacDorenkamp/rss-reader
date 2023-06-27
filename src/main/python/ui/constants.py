@@ -1,8 +1,10 @@
-from PyQt5.QtGui import QFont, QIcon
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
+from fbs_runtime import PUBLIC_SETTINGS
+from PyQt5.QtGui import QFont, QIcon
 
 import json
 import sys
+import typing
 
 global BASE_FONT
 global MID_FONT
@@ -38,6 +40,11 @@ def _create_fonts():
 	TITLE_FONT.setPointSize(18)
 
 
+def format_public_settings(fp: typing.TextIO):
+	text = fp.read()
+	return text % PUBLIC_SETTINGS
+
+
 global resources
 resources = {
 	"style/main": {
@@ -46,6 +53,10 @@ resources = {
 	"palette": {
 		"file": "palette.json",
 		"load": json.load
+	},
+	"about": {
+		"file": "about.txt",
+		"load": format_public_settings
 	},
 	"icons/plus": {
 		"file": "icons/png/13.png",
